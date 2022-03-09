@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sat May 15 18:27:37 2021
+
+@author: l3x
+"""
+
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.pyplot as plt
+from matplotlib import cm
+from matplotlib.ticker import LinearLocator, FormatStrFormatter
+import numpy as np
+
+plt.close('all')
+
+fig = plt.figure()
+ax = fig.gca(projection='3d')
+
+# Make data.
+X = np.arange(0, 1,0.04)
+Y = np.arange(0, 1,0.04)
+X, Y = np.meshgrid(X, Y)
+
+def compute_cost(XO):
+    X,Y=XO[0],XO[1]
+    R = np.sqrt(X**2 + Y**2)
+    Z = 0.2*np.sin(2*np.pi*R)+R
+
+    return Z
+
+
+
+Z = compute_cost([X,Y])
+
+# Plot the surface.
+surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
+                       linewidth=0, antialiased=False,alpha=0.2)
+
+# Customize the z axis.
+ax.set_zlim(-1.01, 1.01)
+ax.zaxis.set_major_locator(LinearLocator(10))
+ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
+
+# Add a color bar which maps values to colors.
+fig.colorbar(surf, shrink=0.5, aspect=5)
+
+plt.show()
+
+
+X0=np.array([1,1])
+pt0=np.array([1,1,compute_cost(X0)])
+ax.scatter(*pt0,color="yellow",s=200)
+
+
+
+def compute_gradient(func,X_params,eps=1e-6):
+    
+    grad=np.array([func(X_params+np.array([eps if j==i else 0 for j in range(len(X_params))])) - func(X_params-np.array([eps if j==i else 0 for j in range(len(X_params))])) for i in range(len(X_params))])
+
+    grad/=2*eps
+    return grad
+
+X0=np.array([0.95,0.95])
+X_descent=X0
+X_custom_descent=X0
+
+Xd_list=[X0]
+Xcd_list=[X0]
+
+Gcdprev=np.zeros(2)
+Gcd_deriv=np.zeros(2)
+Gcdint=np.zeros(2)
+
+lr_k=0.1
+lr_d=0.01
+lr_i=1e-2
+
+# lr_i=0.1
+
+pts_d_list=[]
+pts_cd_list=[]
+import time
+# time.sleep(1)
+for i in range(15):
+
+    X_descent=Xd_list[-1]
+    X_custom_descent=Xcd_list[-1]
+    
+    Gd=compute_gradient(compute_cost,X_descent)    
+    Gcd=compute_gradient(compute_cost,X_custom_descent)    
+    
+    Gcd_deriv=Gcd-Gcdprev
+    Gcdprev=Gcd
+    
+    new_X_descent=X_descent-lr_k*Gd
+    new_X_custom_descent=X_custom_descent-lr_k*Gd-lr_d*Gcd_deriv-lr_i*Gcdint
+    
+    Gcdint+=Gcd
+    
+    Xd_list.append(new_X_descent)
+    Xcd_list.append(new_X_custom_descent)
+    
+    pts_d_list.append(np.r_[new_X_descent,compute_cost(new_X_descent)])
+    pts_cd_list.append(np.r_[new_X_custom_descent,compute_cost(new_X_custom_descent)])
+    # plt.show()
+    # time.sleep(2)
+
+pts_d_list=np.vstack(pts_d_list)
+pts_cd_list=np.vstack(pts_cd_list)
+
+descent_scatterplot=ax.scatter(pts_d_list[:,0],
+                               pts_d_list[:,1],
+                               pts_d_list[:,2],
+                               color="red",
+                               label="descent",
+                               s=15)
+custom_descent_scatterplot=ax.scatter(pts_cd_list[:,0],
+                                      pts_cd_list[:,1],
+                                      pts_cd_list[:,2],
+                                      color="blue",
+                                      label="custom descent",
+                                      s=15)
+ax.legend()
