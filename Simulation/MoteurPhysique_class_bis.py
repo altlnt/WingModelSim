@@ -143,7 +143,7 @@ class MoteurPhysique():
         " called from opti refers to wether this class is instanciated in a simulation"
         "or in a optimization process, in which case called_from_opti==True "
         "This blocks the logging process, so that calling the MoteurPhysique in an optimization"
-         "does not create a log as a simulation would (would be confusing)"
+        "does not create a log as a simulation would (would be confusing)"
 
 
         self.called_from_opti=called_from_opti
