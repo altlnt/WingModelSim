@@ -1,16 +1,18 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Apr 20 21:33:53 2021
-
-@author: alex
-"""
 import numpy as np
 from Gui_class import Viewer
 from MoteurPhysique_class_bis import MoteurPhysique
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
 import time 
+
+
+"Define class Simulator"
+
+"This is the main class for the simulation"
+"This acts as a framework to run both Viewer, which handles GUI and MoteurPhysique, which handles physics"
+
+
+
 
 class Simulator():
     
@@ -22,14 +24,24 @@ class Simulator():
         
     def update(self):
         
+
+        "Pull joystick input from viewer (viewer periodically updates the joystick input"
+        "using pygame "
+
         joystick_input=np.array([self.viewer.joystick_L_horizontal,
         self.viewer.joystick_L_vertical,
         self.viewer.joystick_R_horizontal,
         self.viewer.joystick_R_vertical])        
         
-        
+        "update simulation with a time step of len dt"
+
         self.moteur_phy.update_sim(time.time()-self.t0, joystick_input)
         
+
+        " T_init in moteur_phy is the time when joystick inputs become active"
+        " before t=T_init, a step in thrust is applied "
+
+
         if time.time()-self.t0<self.moteur_phy.T_init:
             
             r,g,b,alpha=255,0,0,255
@@ -45,6 +57,8 @@ class Simulator():
             r,g,b,alpha=0,255,0,255
             self.viewer.g_translation.setColor((r,g,b,alpha))
             
+        " the attitude and pos information pulled from MoteurPhysique to update GUI camera "
+
         self.viewer.target_q=self.moteur_phy.q
         self.viewer.target_pos=self.moteur_phy.pos
 
@@ -52,7 +66,7 @@ class Simulator():
         self.viewer.update_joysticks()        
         
     def launch_sim(self):
-        
+        "popus up the GUI and starts the callback"
         self.viewer.w_translation.show()
         self.viewer.mw.show()
 
@@ -63,6 +77,3 @@ class Simulator():
         pg.mkQApp().exec_()        
         
         return
-
-# S=Simulator()
-# S.launch_sim()

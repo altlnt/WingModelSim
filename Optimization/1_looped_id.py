@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Sat Aug  7 15:59:50 2021
-
-@author: alex
-"""
-
 
 import numpy as np
 import transforms3d as tf3d
@@ -19,8 +11,20 @@ import pandas as pd
 
 # %%   ####### IMPORT DATA 
 
+"this script can handle both simulation and real datasets"
+"the real dataset is the intellectual property of Sorbonne Universite and thus cannot be disclosed online"
+"feel free to use this script to fit the model on sim logs however. HF"
+
+list_of_datasets_name = ["real","sa","sa_noisy","fp","fp_noisy"]
+list_of_modesl = ['neural','simple','full']
 
 def gen_grad_acc(df):
+
+    "compute acc in body frame with  numerical derivation of the speedd"
+    "can be handy for real datasets, where the raw acceleration comes from the noisy accelerometer"
+    "in which case finite differences on the estimated speed is smoother "
+
+
     
     df3=df
     
@@ -53,14 +57,13 @@ def gen_grad_acc(df):
     return df3
 
 
-# ds="sa_noisy"
-# model="simple"
 
-for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
+for ds in list_of_datasets_name:
     for model in ["neural"]:
         
+
+        " import and prepare data "
         log_path=os.path.join(os.getcwd(),"datasets",ds,"log.txt")
-        # log_path="~/Documents/Avion-Simulation-Identification/Logs/log_sim/2022_01_28_00h41m20s/log.txt"
         save_dir=os.path.join(os.getcwd(),"datasets",ds,"opti_res")
                               
         os.makedirs(save_dir,exist_ok=True)
@@ -75,6 +78,8 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
             
         prep_data=prep_data.drop(columns=[i for i in raw_data.keys() if (("level" in i ) or ('Unnamed' in i) or ("index" in i)) ])
         prep_data=prep_data.reset_index()
+
+
         if ds=="real":
             prep_data["takeoff"]=np.ones(len(prep_data))
         
@@ -90,6 +95,10 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
         
         df=prep_data[:len(prep_data)]
 
+        "this was specific to toy datasets produced for demonstration"
+        " basically, you can specify here where to cut, typically you should cutoff "
+        " takeoff and the last seconds (when you drop the joystick to close the window)"
+
         if "sa" in ds:
             df = df[df['t']<85]
         elif "fp" in ds:
@@ -98,13 +107,22 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
         
         df = gen_grad_acc(df).drop(columns=['level_0','index'])
 
-        if "real" not in ds:        
+
+        if "real" not in ds:  
+
+            "we just use the same parameters as in the moteur physique"
+            "remember to change it here if you change it in moteurphysique class"
+            "however changing working values is not a good idea tbh."
+
+
+
             CTSIM=2*2e-4
             Tint = CTSIM*df['rot_speed']**2
             df.insert(df.shape[1],'thrust_intensity',Tint)
             delt=np.array([df['delta[%i]'%(i)] for i in range(4)]).T
             delt=np.concatenate((delt,np.zeros((len(delt),1))),axis=1)
             delt=delt.reshape((delt.shape[0],1,delt.shape[1]))
+
             "to compute and log acc,alpha,q,omega at step k : "
             " rot_speed k"
             " deltas_k "
@@ -125,8 +143,12 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
                             df[i][:-1]=df[i][1:] 
                             "le takeoff est décalé de 2dt"
             df=df[:-5]
-            "splitting the dataset into nsecs sec minibatches"            
+            "splitting the dataset into nsecs sec minibatches"    
+
         else:
+
+            "this is specific to the azimut dataset"
+
             df.insert(df.shape[1],'omega_c[5]',df['PWM_motor[5]']*9.57296629e-01-1.00188650e+03)
             radsec_reg = df['PWM_motor[5]']*9.57296629e-01-1.00188650e+03
             df['rot_speed']=radsec_reg
@@ -171,8 +193,13 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
             except:
                 pass
         
+
+
+
         if "real" not in ds:
-        
+
+            "reimplementing the same equations and parameters as in simulator class"
+
             Aire_list = [0.62*0.262* 1.292 * 0.5, 
                          0.62*0.262* 1.292 * 0.5, 
                          0.34*0.01* 1.292 * 0.5, 
@@ -258,6 +285,10 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
             upwards.append(Rvg@np.array([0.0,0,1.0]))
             
             crosswards=[np.cross(j,i) for i,j in zip(forwards,upwards)]
+
+            "in the case of the real dataset, omega can be recomputed using finite differences"
+            " on the attitude "
+
             def skew_to_x(S):
                 SS=(S-S.T)/2
                 return np.array([SS[1,0],SS[2,0],S[2,1]])
@@ -283,6 +314,14 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
             
             omegas=filtering(omegas)
         
+
+        "now we compute the dynamics "
+        "again we use the numpy vectorization to shorten calculation time"
+        "this is precomputed, as this does not involve any identification parameter"
+
+        "the idea is that all the quantities that can be computed"
+        " once and for all before the identification procedure should be."
+
         dragdirs=np.zeros((v_body_array.shape[0],3,5))
         liftdirs=np.zeros((v_body_array.shape[0],3,5))
         slipdirs=np.zeros((v_body_array.shape[0],3,5))
@@ -327,10 +366,27 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
         
         # %% OPTI INTERM
         
+
+        "this is used to generate a random parammeter init set, when working with simulated datasets "
+        "where the 'real' values of the parameter are exactly known"
+
         def generate_random_params(X_params,amp_dev=0.0):
             return X_params*(1+amp_dev*(np.random.random(size=len(X_params))-0.5))   
         
         
+        "hereby are defined the identification procedure for three models"
+        " simple where only the small angles model is implemented"
+        " full where both small angles and fp are implemented "
+        " and neural."
+
+        "if the dataset contains only data generated at small angles, both simple and full models converge well"
+        " however, if the dataset contains data generated with high angles, the simple model won't fit perfectly (obviously)"
+        " but the full model will still converge"
+
+        "neural is here to compete with the full and simple models that we known will perfectly generated data"
+
+
+
         if model=="simple":
             
             a_0_real=0.0
@@ -366,13 +422,6 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
                            cd0sa_real,
                            cd1sa_real,
                            m_real]),1.0)
-            
-            # realX=[ct_real,a_0_real, 
-            #        cl1sa_real,
-            #        lift_gain_real,
-            #        cd0sa_real,
-            #        cd1sa_real,
-            #        m_real]
             
             bounds_interm=[bounds_ct,bounds_a_0,bounds_cl1sa,
                           bounds_lift_gain,bounds_cd0sa,
@@ -509,54 +558,6 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
                 pool = Pool(processes=16)
                 pool.map(run_parallel_interm, x_r)
                 
-
-        # for i in x_r:
-        #     run_parallel_interm(i)
-        
-        # realX=[ct_real,a_0_real, 
-        #        cl1sa_real,
-        #        lift_gain_real,
-        #        cd0sa_real,
-        #        cd1sa_real,
-        #        m_real]
-        
-        # acc_pred=dyn_interm(df=df,coeffs=realX,fm=True,fc=True)
-        
-        # f,axes=plt.subplots(2,1)
-        # cols=["darkred","darkgreen","darkblue"]
-        
-        # for i in range(3):
-        #     axes[0].plot(df['t'],acc_pred[:,i]
-        #               ,label=r"$accpred_{NED},%i$"%(i),c="rgb"[i])
-            
-        #     axes[0].plot(df['t'],df['acc[%i]'%(i)]
-        #               ,label=r"$acc_{ned},%i$"%(i),c="rgb"[i],linestyle="--")
-            
-        #     axes[1].plot(df['t'],df['acc[%i]'%(i)]-acc_pred[:,i]
-        #               ,label=r"$acc_{ned},%i$"%(i),c="rgb"[i])
-            
-            
-        # for j,i in enumerate(axes):
-        #     i.grid(),i.legend(loc=4),i.set_xlabel("t")
-        #     i.set_ylabel("m/s^2")
-        
-        # f,axes=plt.subplots(5,1)
-        
-        # alphas=np.array([i for i in df['alphas_calc']])
-        # ind=(df['t']>-1)*(df['t']<1e10)
-        # rgbybl=["red","green","blue","orange","black"]
-        # for i in range(5):
-        #     axes[i].plot(df["t"][ind],
-        #              180.0/np.pi*alphas[:,0,i][ind],
-        #              label=r"$\alpha_%i$"%(i),color=rgbybl[i])
-            
-        #     axes[i].plot(df["t"][ind],
-        #              180.0/np.pi*df['alpha[%i]'%(i)][ind],
-        #              label=r"$\alpha_{real,%i}$"%(i),linestyle="--",color=rgbybl[i])
-            
-        #     axes[i].grid(),axes[i].legend(loc=4),axes[i].set_xlabel('t'),axes[i].set_ylabel('angle (°)')
-        
-        
         
         if model=="full":
             
@@ -771,62 +772,6 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
                 pool.map(run_parallel_full, x_r)
                 
 
-            # for i in x_r:
-            #     run_parallel_full(i)
-        
-        # realX_full=np.array([ct_real, 
-        #             a_0_real, 
-        #             a_s_real, 
-        #             d_s_real, 
-        #             cl1sa_real, 
-        #             cl1fp_real, 
-        #             lift_gain_real, 
-        #             lift_shift_real, 
-        #             drag_shift_real, 
-        #             cd0fp_real, 
-        #             cd0sa_real, 
-        #             cd1sa_real, 
-        #             cd1fp_real, 
-        #             m_real])
-        
-        # acc_pred=dyn_full(df=df,coeffs=realX_full,fm=True,fc=True)
-
-        # f,axes=plt.subplots(2,1)
-        # cols=["darkred","darkgreen","darkblue"]
-        
-        # for i in range(3):
-        #     axes[0].plot(df['t'],acc_pred[:,i]
-        #               ,label=r"$accpred_{NED},%i$"%(i),c="rgb"[i])
-            
-        #     axes[0].plot(df['t'],df['acc[%i]'%(i)]
-        #               ,label=r"$acc_{ned},%i$"%(i),c="rgb"[i],linestyle="--")
-            
-        #     axes[1].plot(df['t'],df['acc[%i]'%(i)]-acc_pred[:,i]
-        #               ,label=r"$acc_{ned},%i$"%(i),c="rgb"[i])
-            
-            
-        # for j,i in enumerate(axes):
-        #     i.grid(),i.legend(loc=4),i.set_xlabel("t")
-        #     i.set_ylabel("m/s^2")
-        
-        # f,axes=plt.subplots(5,1)
-        
-        # alphas=np.array([i for i in df['alphas_calc']])
-        # ind=(df['t']>-1)*(df['t']<1e10)
-        # rgbybl=["red","green","blue","orange","black"]
-        # for i in range(5):
-        #     axes[i].plot(df["t"][ind],
-        #               180.0/np.pi*alphas[:,0,i][ind],
-        #               label=r"$\alpha_%i$"%(i),color=rgbybl[i])
-            
-        #     axes[i].plot(df["t"][ind],
-        #               180.0/np.pi*df['alpha[%i]'%(i)][ind],
-        #               label=r"$\alpha_{real,%i}$"%(i),linestyle="--",color=rgbybl[i])
-            
-        #     axes[i].grid(),axes[i].legend(loc=4),axes[i].set_xlabel('t'),axes[i].set_ylabel('angle (°)')
-
-
-
         if model=="neural":
             
             
@@ -872,13 +817,6 @@ for ds in ["real","sa","sa_noisy","fp","fp_noisy"]:
             
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.15, random_state=42)
             
-            # plane_model=tf.keras.Sequential([
-            #     keras.layers.Dense(25,activation="relu"),
-            #     keras.layers.Dense(20,activation="tanh"),
-            #     keras.layers.Dropout(.2),
-            #     keras.layers.Dense(13,activation="tanh"),
-            #     keras.layers.Dense(7,activation="tanh"),
-            #     keras.layers.Dense(3)])
             plane_model=tf.keras.Sequential([keras.layers.Dense(13,activation="relu"),
             keras.layers.Dense(13,activation="relu"),
             keras.layers.Dense(13,activation="tanh"),

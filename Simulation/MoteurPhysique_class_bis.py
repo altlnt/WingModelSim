@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Apr 20 00:36:07 2021
-@author: alex
-"""
-
 import sys
 sys.path.append('../')
 import numpy as np
@@ -28,10 +21,9 @@ class MoteurPhysique():
         if not called_from_opti:
             os.makedirs(self.save_path_base)
  
-        
+        "defining placeholders"
         # Miscellaneous
-        self.data_save_path=self.save_path_base
-        self.last_t=0.0
+        self.last_t=0.0 #last timestep is kept in memory
         self.T_init=T_init
         # Body state
         
@@ -126,7 +118,6 @@ class MoteurPhysique():
         # self.Dict_variables = OrderedDict(sorted(self.Dict_variables.items(), key=lambda t: t[0]))
             
        
-            
         # Dictionnaires des états
         self.Dict_etats     = {"position" : self.pos,    \
                                "vitesse" : self.speed,   \
@@ -147,6 +138,14 @@ class MoteurPhysique():
  
     
         self.SaveDict={} 
+
+
+        " called from opti refers to wether this class is instanciated in a simulation"
+        "or in a optimization process, in which case called_from_opti==True "
+        "This blocks the logging process, so that calling the MoteurPhysique in an optimization"
+         "does not create a log as a simulation would (would be confusing)"
+
+
         self.called_from_opti=called_from_opti
         if not called_from_opti:
             for dic in [self.Dict_world,self.Dict_variables]:
@@ -159,7 +158,7 @@ class MoteurPhysique():
                 print("saved_ moteur")
                 mp.write(open("MoteurPhysique_class_bis.py").read())
 
-            print(self.data_save_path)
+            print(self.save_path_base)
     
     def orthonormalize(self,R_i):
         R=R_i
@@ -170,7 +169,12 @@ class MoteurPhysique():
         R[:,2]/=np.linalg.norm(R[:,2])
         return R
 
+
+
     def Init(self,joystick_input,t):
+
+        "initialize MoteurPhysique"
+
         self.joystick_input_log= joystick_input
         self.joystick_input = joystick_input
         self.moy_rotor_speed = self.Dict_variables["rotor_moy_speed"]
@@ -194,6 +198,8 @@ class MoteurPhysique():
            
         # Mise à niveau des commandes pour etre entre -15 et 15 degrés 
          # (l'input est entre -250 et 250 initialement)
+
+
         self.Dict_Commande["delta"] = np.array([self.joystick_input[0], -self.joystick_input[0], \
                                                 (self.joystick_input[1] - self.joystick_input[2]) \
                                                 , (self.joystick_input[1] + self.joystick_input[2]) , 0])
@@ -223,9 +229,14 @@ class MoteurPhysique():
         
         return np.array([roll,pitch,yaw])
     
+
+
     def compute_dynamics(self,joystick_input,t):
-        # Ouverture du fichier de fonction, on obtient une liste de fonction obtenu avec le jupyter lab.
-            
+
+
+        " the flight dynamics are hard coded in this method"
+
+
         self.Init(joystick_input,t)
             
         if t<self.T_init:
@@ -235,31 +246,43 @@ class MoteurPhysique():
                 return print("Début des commandes dans :", self.T_init-t)
                 
         else: 
-            # print("R,v",self.R,self.speed)
+
+            "calculations are performed taking advantage of numpy vectorization"
+
+            "project airspeed in liftdrag plane "    
+
             v_body=self.R.T@self.speed
             v_in_ldp= v_body - np.cross(self.cp_list,self.omega)
         
             v_in_ldp = - np.cross(self.crosswards,np.cross(self.crosswards,v_in_ldp))
     
-            # print("vldp",v_in_ldp)
-            # 
+            "drag is opposite to airspeed projection in liftdrag plane "    
+
             dd=-v_in_ldp
             dd=dd.T@np.diag(1.0/(np.linalg.norm(dd,axis=1)+1e-8))
         
+            "lift is perpendicular to airspeed, directed upwards in liftdrag plane "    
+
             ld=np.cross(self.crosswards,v_in_ldp)
             ld=ld.T@np.diag(1.0/(np.linalg.norm(ld,axis=1)+1e-8))    
     
-            # print("dd,ld",dd.shape,ld.shape)
+
+
+            "the name Aire_list is abusive, actually, its elements are not surfaces but 0.5*surface * density"
+
             dragdirs=self.R@(dd@np.diag(self.Aire_list)*np.linalg.norm(v_in_ldp)**2)
             liftdirs=self.R@(ld@np.diag(self.Aire_list)*np.linalg.norm(v_in_ldp)**2)
            
-            # print("dragdirs,liftdirs",dragdirs.shape,liftdirs.shape)
+            " compute angle of attack as the angle between the frontward vector and airspeed projected in LDP"
+
             alphas_d=np.diag(v_in_ldp@(np.array(self.forwards).T))/(np.linalg.norm(v_in_ldp,axis=1)+1e-8)
             alphas_d=np.arccos(alphas_d)
             alphas_d=np.sign(np.diag(v_in_ldp@np.array(self.upwards).T))*alphas_d   
-            # print("alphas_d",alphas_d.shape)
+
+
             self.Dict_etats['alpha']=alphas_d
-            
+        
+            "using alpha, and the physical parameters, compute C_L and C_L for each wing"
             a=alphas_d
             a_0_arr=self.Dict_variables['alpha0']
             
@@ -276,8 +299,9 @@ class MoteurPhysique():
                                         self.Dict_variables['cd1fp'] * np.sin(a +  \
                                          + self.Dict_variables["coeff_drag_shift"]*self.Dict_Commande["delta"])**2
 
-            # print(CL_sa.shape,CD_sa.shape)
             a_s,d_s=self.Dict_variables['alpha_stall'],self.Dict_variables['largeur_stall']
+
+            "only thing left to do is compyting sigma to achive, sa/fp model fusion"
 
             s = np.where(
                 abs(a+a_0_arr)>a_s+d_s,
@@ -295,21 +319,21 @@ class MoteurPhysique():
                 if i<1.0:
                     print("STALL")
             
+            "below are the final aerodynamical coefficients"
+
             C_L = CL_fp + s*(CL_sa - CL_fp)   + self.Dict_variables['coeff_lift_gain'] * np.sin(self.Dict_Commande["delta"])
             C_D = CD_fp + s*(CD_sa - CD_fp) 
             
-            # print("STALL WING") if len([i for i in s if i<0.99])>0 else None
             lifts=C_L*liftdirs    
             drags=C_D*dragdirs        
-            # print("lifts,drags",lifts.shape,drags.shape)
+
             aeroforce_total=np.sum(lifts+drags,axis=1)
             
             T=self.R[:,0]*self.Dict_Commande["rotor_speed"]**2*self.Dict_variables['Ct']
             g=np.array([0,0,9.81])
             m=8.5
             self.forces= T + m*g +  aeroforce_total
-            # print("forces",self.forces.shape)
-            # print(lifts.shape)
+
             self.torque =  np.sum(np.cross(self.cp_list,
                                            np.transpose(self.R.T@(lifts+drags))),axis=0)
             
@@ -317,12 +341,17 @@ class MoteurPhysique():
                 self.forces[2]=min(self.forces[2],0)
                 
             return
-################## Calcul du gradient #################
 
     
     
     def update_state(self,dt):
-        
+        "wrapper for compute dynamics"
+
+        "this allows handling specific cases, e.g prevent freefall when the simulator boots "
+        "and there is no joystick inputs, etc.... "
+
+        "the euler scheme is implemented here"
+
         "update omega"
         
         J=self.Dict_variables['inertie']
@@ -352,8 +381,8 @@ class MoteurPhysique():
             
         R=tf3d.quaternions.quat2mat(new_q/tf3d.quaternions.qnorm(new_q))
         self.R=self.orthonormalize(R)
-        self.q=tf3d.quaternions.mat2quat(R)    
-        #print(tf3d.quaternions.qnorm(self.q))
+        self.q=tf3d.quaternions.mat2quat(R)   
+
         "update forces"
                 
         self.acc=self.forces/m
@@ -362,6 +391,8 @@ class MoteurPhysique():
 
     def log_state(self):
         
+        "logging function, nothing special to say... "
+
         keys=['t','acc[0]','acc[1]','acc[2]',
               'speed[0]','speed[1]','speed[2]',
               'pos[0]','pos[1]','pos[2]',
@@ -390,7 +421,7 @@ class MoteurPhysique():
         rot_speed=self.Dict_Commande["rotor_speed"]
         TK=self.takeoff
 
-        if 'log.txt' not in os.listdir(self.data_save_path):
+        if 'log.txt' not in os.listdir(self.save_path_base):
             print("Here: Init")
             first_line=""
             for j,key in enumerate(keys):
@@ -399,7 +430,7 @@ class MoteurPhysique():
                 first_line=first_line+key
                 
             first_line=first_line+"\n"
-            with open(os.path.join(self.data_save_path,"log.txt"),'a') as f:
+            with open(os.path.join(self.save_path_base,"log.txt"),'a') as f:
                 f.write(first_line)
         
         scope=locals()
@@ -427,10 +458,11 @@ class MoteurPhysique():
             
         line_to_write=line_to_write+"\n"  
         
-        with open(os.path.join(self.data_save_path,"log.txt"),'a+') as f:
+        with open(os.path.join(self.save_path_base,"log.txt"),'a+') as f:
             #print("Here: data")
             f.write(line_to_write)        
             
+
     def update_sim(self,t,joystick_input):
         
         dt=t-self.last_t
@@ -441,5 +473,4 @@ class MoteurPhysique():
         
         return
     
-M=MoteurPhysique(called_from_opti=True)
-M.compute_dynamics(np.zeros(4),10)
+

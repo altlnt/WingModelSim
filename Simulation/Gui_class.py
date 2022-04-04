@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Apr  9 15:04:00 2021
-
-@author: alex
-"""
-
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
 import pyqtgraph.opengl as gl
@@ -14,6 +6,9 @@ import socket
 import pygame
 import transforms3d as tf3d 
 from PIL import Image 
+
+"Viewer class"
+"a symple pyqtgraph based gui to visualize the drone's motion"
 
 class Viewer:
     def __init__(self):
@@ -24,15 +19,10 @@ class Viewer:
         
         #           Initialisation du widget de visualisation de la rotation
         "3D rotation"       
-        # self.w_rot = gl.GLViewWidget()
-        # self.w_rot.opts['distance'] = 20
-        # self.w_rot.setWindowTitle(' ROTATION')
-        
-        # self.g_rot = gl.GLGridItem()
-        # self.w_rot.addItem(self.g_rot)
         
         self.target_q=np.array([1.0,0.0,0.0,0.0])
         self.target_R=tf3d.quaternions.quat2mat(self.target_q)
+
         #  Création de la géométrie (on pourrait mettre un mesh de drone pour être plus "réaliste")
         
         
@@ -62,7 +52,6 @@ class Viewer:
         self.m1.translate(0, 0, 0)
         self.m1.setGLOptions('additive')
         
-        #                   Callback update de l'affichage de la rotation 
         
         self.phase=0
         ####################################################################
@@ -103,9 +92,8 @@ class Viewer:
         
         ####################################################################
         
-        #           Initialisation du widget de visualisation de la translation
+        #           Initialisation du widget de gestion du joystick
         
-        "joystick"
         self.mw = QtGui.QMainWindow()
         self.mw.resize(150,50)
         self.mw.setWindowTitle('JoystickButton')
@@ -125,8 +113,11 @@ class Viewer:
         
         self.layout.addWidget( self.jb_l, 0, 0)
         self.layout.addWidget( self.jb_r, 0, 1)
-        #                   Callback update de l'affichage de la translation 
+
         
+
+        " paramètres de gestion du joystick "
+
         self.joystick_number=0
         
         self.JS=pygame.joystick.Joystick(self.joystick_number)        
@@ -144,6 +135,7 @@ class Viewer:
         RH=self.JS.get_axis(self.joystick_R_horizontal_number)
         RV=self.JS.get_axis(self.joystick_R_vertical_number)
         
+        # l'input du joystick doit être rescalé
 
         
         self.joystick_L_horizontal = LH/4 #left -1 / right 1
@@ -151,9 +143,7 @@ class Viewer:
         self.joystick_R_horizontal = RH/4#left -1 / right 1
         self.joystick_R_vertical = -RV/4  #up -1 / down 1
         
-        
-        #print(LH,LV,RH,RV)
-        
+            
         self.joystick_L_horizontal*=1e3
         self.joystick_L_vertical*=1e3
         self.joystick_R_horizontal*=1e3
@@ -166,6 +156,9 @@ class Viewer:
             
     def update_translation(self,new_position=None):
         
+        " cette méthode est utilsée par la classe simulateur, dans Simulator_class.py, qui instancie la classe Viewer "
+        " elle sert à updater la visualisation"
+
         self.cols[-1]=self.color
         self.cols.append(self.Mcolor)
         self.sizes[-1]=self.size
@@ -193,6 +186,9 @@ class Viewer:
                                               #                          ,self.target_q[2],self.target_q[3]))
     
     def update_joysticks(self):
+
+        "cette méthode est appelée par la callback, elle permet de récupérer les inputs du joystick"
+
         pygame.event.get()
         self.JS=pygame.joystick.Joystick(self.joystick_number)
         self.JS.init()
@@ -223,6 +219,8 @@ class Viewer:
         return
         
     def update(self):
+
+        "wrapper pour les méthodes d'update définies ci-dessus"
         self.update_rot()
         self.update_translation()
         self.update_joysticks()
@@ -230,6 +228,9 @@ class Viewer:
         return
     
     def launch(self):
+
+        "pour démarrer la callback de la fenêtre"
+
         self.w_rot.show()
         self.w_translation.show()
         self.mw.show()
@@ -240,7 +241,3 @@ class Viewer:
         pg.mkQApp().exec_()
         return
     
-import multiprocessing as mp
-
-# G=Viewer()
-# G.launch()
